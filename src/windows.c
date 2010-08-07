@@ -30,8 +30,6 @@ int window_type;
 
 Lisp_Window *focus_window;
 
-int pending_destroys;
-
 static bool initialising;
 
 DEFSYM(add_window_hook, "add-window-hook");
@@ -281,20 +279,6 @@ find_window_by_id (Window id)
     w = window_list;
     while (w != 0 && w->id != id && w->frame != id)
 	w = w->next;
-    if (w != 0 && WINDOW_IS_GONE_P (w))
-	w = 0;
-    return w;
-}
-
-/* This is different to the above in that it could return a window
-   that doesn't have a client window. */
-Lisp_Window *
-x_find_window_by_id (Window id)
-{
-    Lisp_Window *w;
-    w = window_list;
-    while (w != 0 && w->saved_id != id && w->frame != id)
-	w = w->next;
     return w;
 }
 
@@ -451,7 +435,7 @@ add_window (Window id)
 	window_list = w;
 	w->car = window_type;
 	w->id = id;
-	w->saved_id = id;
+	w->gone = FALSE;
 	w->plist = Qnil;
 	w->frame_style = Qnil;;
 	w->icon_image = rep_NULL;
@@ -460,8 +444,8 @@ add_window (Window id)
 	w->net_icon_name = Qnil;
 	w->border_pixel = BlackPixel (dpy, screen_num);
 
-        /* Don't garbage collect the window before we are done. */
-        /* Note: must not return without rep_POPGC. */
+	/* Don't garbage collect the window before we are done. */
+	/* Note: must not return without rep_POPGC. */
 	rep_PUSHGC(gc_win, win);
 
 	/* have to put it somewhere until it finds the right place */
@@ -558,7 +542,8 @@ add_window (Window id)
 	    Fungrab_server ();
 	}
 	else
-	    emit_pending_destroys ();
+	{
+	}
 
 	if (!WINDOW_IS_GONE_P (w))
 	{
@@ -584,42 +569,59 @@ add_window (Window id)
     return w;
 }
 
+/*
+ * Mark the X client window as gone from the X server, to not issue any more X-requests on it.
+ */
+void
+mark_window_as_gone(Lisp_Window *w)
+{
+   if (WINDOW_IS_GONE_P(w))
+      return;
+   DB(("%s %x %s\n", __FUNCTION__, w->id, rep_STR(w->name)));
+   w->gone = True;
+}
+
 /* Remove W from the managed windows. If DESTROYED is nil and
    the window is currently reparented by us, it will be reparented back to
    the root window */
 void
-remove_window (Lisp_Window *w, bool destroyed, bool from_error)
+remove_window (Lisp_Window *w, bool destroyed)
 {
     DB(("remove_window (%s, %s)\n",
 	rep_STR(w->name), destroyed ? "destroyed" : "not-destroyed"));
 
+    remove_from_stacking_list (w);
     if (w->id != 0)
     {
-	if (!destroyed && !from_error)
+	if (!destroyed && (!WINDOW_IS_GONE_P (w)))
 	{
-	    grab_window_events (w, FALSE);
+	    XUngrabKey (dpy, AnyKey,AnyModifier, w->id);
 	    remove_window_frame (w);
 
 	    /* Restore original border width of the client */
 	    XSetWindowBorderWidth (dpy, w->id, w->old_border_width);
 	}
 
-	if (!from_error)
-	    destroy_window_frame (w, FALSE);
-
-	if (!WINDOW_IS_GONE_P (w))
-	    remove_from_stacking_list (w);
-
-	if (!from_error)
-	    focus_off_window (w);
-
-	w->id = 0;
-	pending_destroys++;
-
-	/* gc will do the rest... */
-    }
-    else if (w->frame != 0 && !from_error)
 	destroy_window_frame (w, FALSE);
+
+	if ((!destroyed) && (!WINDOW_IS_GONE_P (w)))
+	    focus_off_window (w);
+    }
+    else if (w->frame != 0)
+	destroy_window_frame (w, FALSE);
+}
+
+/* The window is gone from the X display. */
+void
+destroy_window (Lisp_Window *w)
+{
+    /* this is important: all calls from the destroy-notify-hook should know this! */
+    w->destroyed = 1;
+
+
+    Fcall_window_hook (Qdestroy_notify_hook,
+                       rep_VAL(w), Qnil, Qnil);
+    w->id = 0;                   /* mmc: should be last in this function? */
 }
 
 void
@@ -631,33 +633,6 @@ fix_window_size (Lisp_Window *w)
     else
 	XResizeWindow (dpy, w->id, w->attr.width, w->attr.height);
     Fungrab_server ();
-}
-
-/* Call destroy-notify-hook on any newly-dead windows */
-void
-emit_pending_destroys (void)
-{
-    if (pending_destroys > 0)
-    {
-	Lisp_Window *w;
-    again:
-	for (w = window_list; w != 0 && !rep_INTERRUPTP; w = w->next)
-	{
-	    if (WINDOW_IS_GONE_P (w) && !w->destroyed)
-	    {
-		w->destroyed = 1;
-		Fcall_window_hook (Qdestroy_notify_hook,
-				   rep_VAL(w), Qnil, Qnil);
-
-		focus_off_window (w);
-
-		/* gc may have reordered the list, so we have to start
-		   at the beginning again.. */
-		goto again;
-	    }
-	}
-    }
-    pending_destroys = 0;
 }
 
 /* Lisp functions */
@@ -1776,7 +1751,7 @@ windows_kill (void)
     {
 	next = rep_VAL (w->next);
 	Fcall_window_hook (Qremove_window_hook, rep_VAL (w), Qnil, Qnil);
-	remove_window (w, FALSE, FALSE);
+	remove_window (w, FALSE);
 	w = VWIN (next);
     }
 }

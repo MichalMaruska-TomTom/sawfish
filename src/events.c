@@ -739,14 +739,15 @@ expose (XEvent *ev)
 static void
 destroy_notify (XEvent *ev)
 {
-    Lisp_Window *w = x_find_window_by_id (ev->xdestroywindow.window);
-    if (w == 0 || ev->xdestroywindow.window != w->saved_id)
+
+    Lisp_Window *w = find_window_by_id (ev->xdestroywindow.window);
+    if (w == 0 || ev->xdestroywindow.window != w->id)
 	return;
-    remove_window (w, TRUE, FALSE);
+
+    mark_window_as_gone(w);
+    remove_window (w, True);
     property_cache_invalidate_window (rep_VAL (w));
-    emit_pending_destroys ();
-    /* in case the id gets recycled but the window doesn't get gc'd..? */
-    w->saved_id = 0;
+    destroy_window (w);
 }
 
 void
@@ -810,7 +811,7 @@ reparent_notify (XEvent *ev)
                                rep_VAL(w), Qnil, Qnil);
 
 	    /* Not us doing the reparenting. */
-	    remove_window (w, FALSE, FALSE);
+	    remove_window (w, FALSE);
 	}
         else
             Fcall_window_hook (Qreparent_notify_hook,
@@ -829,7 +830,8 @@ map_notify (XEvent *ev)
 	if (wa.override_redirect)
 	{
 	    /* arrgh, the window changed its override redirect status.. */
-	    remove_window (w, FALSE, FALSE);
+	    remove_window (w, FALSE);
+	    destroy_window (w);
 #if 0
 	    fprintf(stderr, "warning: I've had it with window %#lx\n",
 		    (long)(w->id));
@@ -904,7 +906,7 @@ unmap_notify (XEvent *ev)
 	if (being_reparented)
 	    reparent_notify(&reparent_ev);
 	else
-	    remove_window (w, FALSE, FALSE);
+	    remove_window (w, FALSE);
 
 	/* This lets the client know that we are done, in case it wants
 	   to reuse the window. */
@@ -1081,8 +1083,8 @@ focus_out (XEvent *ev)
 	    }
 	}
     }
-    else if ((w = x_find_window_by_id (ev->xfocus.window)) != 0
-	     && WINDOW_IS_GONE_P (w) && ev->xfocus.window == w->saved_id)
+    else if ((w = find_window_by_id (ev->xfocus.window)) != 0
+	     && WINDOW_IS_GONE_P (w) && ev->xfocus.window == w->id)
     {
 	/* focus-out event from a deleted window */
 	if (focus_window == w)
@@ -1481,16 +1483,12 @@ handle_input_mask(long mask)
 		break;
 	}
 
-	rep_PUSHGC(gc_old_current_window, old_current_window);
-	emit_pending_destroys ();
-	rep_POPGC;
-
 	if (xev.type == NoExpose || xev.type == GraphicsExpose)
 	    continue;
 
 #ifdef DEBUG
 	do {
-	    Lisp_Window *w = x_find_window_by_id (xev.xany.window);
+	    Lisp_Window *w = find_window_by_id (xev.xany.window);
 	    DB(("** Event: %s (win %lx: %s)\n",
 		xev.type < LASTEvent ? event_names[xev.type] : "unknown",
 		(long)xev.xany.window, w ? (char *) rep_STR (w->name) : "unknown"));
@@ -1512,7 +1510,6 @@ handle_input_mask(long mask)
 	XFlush (dpy);
     }
 
-    emit_pending_destroys ();
     commit_queued_focus_change ();
 }
 

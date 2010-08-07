@@ -98,7 +98,8 @@ typedef int bool;
 typedef struct lisp_window {
     repv car;
     struct lisp_window *next;
-    Window id, saved_id;
+    Window id;
+    unsigned int gone :1;
     repv plist;
     repv frame_style;
 
@@ -170,7 +171,12 @@ typedef struct lisp_window {
 #define WINDOWP(v)	XWINDOWP(v)
 
 #define WINDOW_FOCUSED_P(w) (focus_window == w)
-#define WINDOW_IS_GONE_P(w) (w->id == 0)
+
+// mmc: destroyed is after gone, b/c destroy_window is called in 1 place, after mark_window_as_gone()
+// but see map_notify()
+#define WINDOW_IS_GONE_P(w) ((w->gone) || (w->destroyed))
+#define WINDOW_CAN_BE_FREED_P(w) (w->destroyed)
+#define WINDOW_IS_GONE_FOR_STACKING_P(w)  WINDOW_CAN_BE_FREED_P(w)
 
 typedef struct Lisp_Font_Class_struct Lisp_Font_Class;
 
