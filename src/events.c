@@ -858,8 +858,7 @@ static void
 unmap_notify (XEvent *ev)
 {
     Lisp_Window *w = find_window_by_id (ev->xunmap.window);
-    if (w != 0 && ev->xunmap.window == w->id
-	&& (ev->xunmap.event == w->id || ev->xunmap.send_event))
+    if (w)
     {
 	/* the event can/will be reported on the frame window as well */
 	if (ev->xunmap.event == ev->xunmap.window)
