@@ -859,56 +859,41 @@ unmap_notify (XEvent *ev)
     if (w != 0 && ev->xunmap.window == w->id
 	&& (ev->xunmap.event == w->id || ev->xunmap.send_event))
     {
-	int being_reparented = FALSE;
-	XEvent reparent_ev;
-
-	w->mapped = FALSE;
-	if (w->reparented)
+	/* the event can/will be reported on the frame window as well */
+	if (ev->xunmap.event == ev->xunmap.window)
 	{
-	    if (w->visible)
+	    w->mapped = FALSE;
+	    if (w->reparented)
 	    {
-		XUnmapWindow (dpy, w->frame);
-		reset_frame_parts (w);
-	    }
-	    /* Careful now.  It is possible that the unmapping was
-	       caused by someone else reparenting the window.
-	       Removing the frame involves reparenting the window to
-	       the root.  Bad things may happen if we do that while
-	       a different reparenting is in progress. -- thk */
-	    being_reparented = XCheckTypedWindowEvent (dpy, w->id,
-						       ReparentNotify,
-						       &reparent_ev);
-	    if (!being_reparented)
-	    {
-	        /* Removing the frame reparents the client window back to
+		if (w->visible)
+		{
+		    XUnmapWindow (dpy, w->frame);
+		    w->visible = FALSE;
+		    reset_frame_parts (w);
+		}
+		/* Removing the frame reparents the client window back to
 		   the root. This means that we receive the next MapRequest
 		   for the window. */
-		remove_window_frame (w);
+		remove_window_frame (w, TRUE);
 		destroy_window_frame (w, FALSE);
-	    }
 
-	    /* Handle a possible race condition: if the client
-	       withdrew the window while we were in the process of
-	       mapping it, the window may be mapped now.  -- thk */
-	    if (ev->xunmap.send_event && !w->client_unmapped)
-	    {
-		before_local_map (w);
-		XUnmapWindow (dpy, w->id);
-		after_local_map (w);
+		/* Handle a possible race condition: if the client
+		   withdrew the window while we were in the process of
+		   mapping it, the window may be mapped now.  -- thk */
+		if (ev->xunmap.send_event && !w->client_unmapped)
+		{
+		    before_local_map (w);
+		    XUnmapWindow (dpy, w->id);
+		    after_local_map (w);
+		}
 	    }
+	    Fcall_window_hook (Qunmap_notify_hook, rep_VAL(w), Qnil, Qnil);
+
+	    /* This lets the client know that we are done, in case it wants
+	       to reuse the window. */
+	    if (!WINDOW_IS_GONE_P (w))
+		XDeleteProperty (dpy, w->id, xa_wm_state);
 	}
-	Fcall_window_hook (Qunmap_notify_hook, rep_VAL(w), Qnil, Qnil);
-
-	/* Changed the window-handling model, don't let windows exist
-	   while they're withdrawn */
-	if (being_reparented)
-	    reparent_notify(&reparent_ev);
-	else
-	    remove_window (w, FALSE, FALSE);
-
-	/* This lets the client know that we are done, in case it wants
-	   to reuse the window. */
-	XDeleteProperty (dpy, ev->xunmap.window, xa_wm_state);
     }
 }
 
