@@ -227,7 +227,7 @@ record_mouse_position (int x, int y, int event_type, Window w)
 	int delta_y = y - button_press_mouse_y;
 	repv tem = Fsymbol_value (Qpointer_motion_threshold, Qt);
 	int threshold = rep_INTP (tem) ? rep_INT (tem) : 0;
-	
+
 	if (ABS (delta_x) > threshold || ABS (delta_y) > threshold)
 	    pointer_in_motion = TRUE;
     }
@@ -441,11 +441,11 @@ motion_notify (XEvent *ev)
     int tmp;
     unsigned tmpu;
     int x, y;
-    
+
     /* Swallow any pending motion events as well. */
     while(XCheckMaskEvent(dpy, ButtonMotionMask, ev))
 	;
-	    
+
     /* It seems that further MotionNotify events are suspended
        until the pointer's position has been queried. I should
        check the Xlib manuals about this. */
@@ -505,7 +505,7 @@ update_window_name(Lisp_Window * w, XPropertyEvent xproperty) {
 
 #ifdef X_HAVE_UTF8_STRING
     if (actual == xa_compound_text || actual == XA_STRING
-        || actual == xa_utf8_string) 
+        || actual == xa_utf8_string)
     {
         convert_status = Xutf8TextPropertyToTextList (dpy, &tprop, &text_list,
                                                       &count);
@@ -518,7 +518,7 @@ update_window_name(Lisp_Window * w, XPropertyEvent xproperty) {
     {
         convert_status = XmbTextPropertyToTextList (dpy, &tprop, &text_list,
                                                     &count);
-        if (convert_status >= Success) 
+        if (convert_status >= Success)
         {
             if (count > 0)
             {
@@ -536,7 +536,7 @@ update_window_name(Lisp_Window * w, XPropertyEvent xproperty) {
 #endif
 
     XFree (prop);
-  
+
     if (str == Qnil)
         return FALSE;
 
@@ -546,14 +546,14 @@ update_window_name(Lisp_Window * w, XPropertyEvent xproperty) {
         w->net_name = str;
         return TRUE;
     }
-  
+
     if (xproperty.atom == xa_wm_net_icon_name
         && str != Qnil && Fequal (w->net_icon_name, str) == Qnil)
     {
         w->net_icon_name = str;
         return TRUE;
     }
-  
+
     if (w->net_name == Qnil && xproperty.atom == XA_WM_NAME)
     {
         if (str == Qnil)
@@ -565,7 +565,7 @@ update_window_name(Lisp_Window * w, XPropertyEvent xproperty) {
             return TRUE;
         }
     }
-  
+
     if (w->net_icon_name == Qnil && xproperty.atom == XA_WM_ICON_NAME)
     {
         if (str == Qnil)
@@ -575,7 +575,7 @@ update_window_name(Lisp_Window * w, XPropertyEvent xproperty) {
             w->icon_name = str;
             return TRUE;
         }
-    }    
+    }
 
     return FALSE;
 }
@@ -616,9 +616,9 @@ property_notify (XEvent *ev)
             if (ev->xproperty.atom == XA_WM_NAME ||
                 ev->xproperty.atom == XA_WM_ICON_NAME ||
                 ev->xproperty.atom == xa_wm_net_name ||
-                ev->xproperty.atom == xa_wm_net_icon_name ) 
+                ev->xproperty.atom == xa_wm_net_icon_name )
             {
-                need_refresh = changed = 
+                need_refresh = changed =
                     update_window_name(w, ev->xproperty);
             }
             else if (ev->xproperty.atom == xa_wm_colormap_windows)
@@ -1082,7 +1082,7 @@ configure_request (XEvent *ev)
     if (w == 0)
     {
 	XWindowChanges xwc;
-	unsigned int xwcm = (ev->xconfigurerequest.value_mask & 
+	unsigned int xwcm = (ev->xconfigurerequest.value_mask &
 		      (CWX | CWY | CWWidth | CWHeight
 		       | CWStackMode | CWSibling));
 	xwc.x = ev->xconfigurerequest.x;
@@ -1267,7 +1267,7 @@ shape_notify (XEvent *ev)
     XShapeEvent *sev = (XShapeEvent *)ev;
     Lisp_Window *w = find_window_by_id (sev->window);
     if (w != 0 && sev->window == w->id
-	&& (sev->kind == ShapeBounding 
+	&& (sev->kind == ShapeBounding
 #ifdef ShapeInput
 	    || sev->kind == ShapeInput
 #endif
@@ -1697,7 +1697,7 @@ events_init (void)
 
     has_randr = FALSE;
 #ifdef HAVE_X11_EXTENSIONS_XRANDR_H
-    // This code is executed even in batch mode, in 
+    // This code is executed even in batch mode, in
     // which case dpy is not set
     if (dpy != 0) {
         has_randr = XRRQueryExtension( dpy, &randr_event_base, &dummy );
