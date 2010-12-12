@@ -31,6 +31,7 @@ int window_type;
 Lisp_Window *focus_window;
 
 static bool initialising;
+extern int restack_fast;
 
 DEFSYM(add_window_hook, "add-window-hook");
 DEFSYM(before_add_window_hook, "before-add-window-hook");
@@ -1607,6 +1608,7 @@ manage_windows (void)
 
     XQueryTree (dpy, root_window, &root, &parent, &children, &nchildren);
     initialising = TRUE;
+    restack_fast = TRUE;
     for (i = 0; i < nchildren; i++)
     {
 	if (mapped_not_override_p (children[i]))
@@ -1622,6 +1624,9 @@ manage_windows (void)
 	}
     }
     initialising = FALSE;
+    restack_fast = FALSE;
+    // restack_all_windows();
+
     if (nchildren > 0)
 	XFree (children);
 
