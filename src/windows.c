@@ -1748,12 +1748,27 @@ windows_kill (void)
     Lisp_Window *w = window_list;
     repv next;
     rep_GC_root gc_next;
+    /* I would like to XReparent them in the order of stacking order! */
     rep_PUSHGC (gc_next, next);
-    while (w != 0)
+
+#define USE_STACKING 0
+    while
+#if USE_STACKING
+	(w = bottom_window())
+#else
+	(w != 0)
+#endif
     {
+#if USE_STACKING
+	next = rep_VAL (w);
+#else
 	next = rep_VAL (w->next);
+#endif
 	Fcall_window_hook (Qremove_window_hook, rep_VAL (w), Qnil, Qnil);
 	remove_window (w, FALSE);
+#if USE_STACKING
+#else
 	w = VWIN (next);
+#endif
     }
 }

@@ -238,6 +238,12 @@ make_stacking_list (void)
     return out;
 }
 
+Lisp_Window*
+bottom_window()
+{
+    return lowest_window;
+}
+
 /* New restacking
  * ==============
  * mmc's stacking: using algorithm described here:
