@@ -1570,7 +1570,8 @@ window_mark_type (void)
     }
     for (ph = prop_handlers; ph != 0; ph = ph->next)
 	rep_MARKVAL (ph->prop);
-    rep_MARKVAL (rep_VAL (focus_window));
+    if (focus_window)
+	rep_MARKVAL (rep_VAL (focus_window));
 }
 
 static void
