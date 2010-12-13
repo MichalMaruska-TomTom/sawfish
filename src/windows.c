@@ -128,7 +128,7 @@ window_input_hint_p (Lisp_Window *w)
 
 struct focus_request_t focus_request;
 
-static Window queued_focus_id;
+Window queued_focus_id;
 static bool queued_take_focus;
 static bool queued_set_focus;
 static int queued_focus_revert;
@@ -164,6 +164,8 @@ commit_queued_focus_change (void)
 	{
 	    DB(("  focusing %x %ld\n",
 		(unsigned) queued_focus_id, queued_focus_time));
+            /* note: temporary approach: */
+            focus_request.window = queued_focus_id;
 	    XSetInputFocus (dpy, queued_focus_id,
 			    queued_focus_revert, queued_focus_time);
 	    /* & Ungrab */
