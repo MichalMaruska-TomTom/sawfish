@@ -1027,7 +1027,12 @@ accept_asked_focus (XEvent *ev, Lisp_Window* previous_focus, Lisp_Window* w,
 {
     DB(("%s: serial %lu vs. expected %lu\n", __FUNCTION__, ev->xfocus.serial,
 	focus_request->serial));
-    if (focus_request->grabbed)
+    if (focus_request->sent)
+    {
+	DB(("Wow!\n"));
+	focus_request->sent = FALSE;
+    }
+    if (focus_request->grabbed == TRUE)
     {
 	focus_request->grabbed = FALSE;
 	Fungrab_keyboard ();
