@@ -33,7 +33,9 @@
 	  sawfish.wm.util.rects
 	  sawfish.wm.windows
 	  sawfish.wm.workspace
-	  sawfish.wm.misc)
+	  sawfish.wm.misc
+	  sawfish.wm.state.configure
+	  )
 
   (define (define-window-strut w left top right bottom)
     (let ((new (list left top right bottom))
@@ -42,12 +44,18 @@
 	(window-put w 'workarea-strut new)
 	(call-hook 'workarea-changed-hook))))
 
-  (define (combined-struts #!key (space current-workspace))
+  ;; bug here?
+  (define (combined-struts #!key (space current-workspace)
+			     (head #f))
     (let ((struts (mapcar (lambda (x)
 			    (window-get x 'workarea-strut))
 			  (filter-windows
 			   (lambda (x)
-			     (window-appears-in-workspace-p x space))))))
+			     (and
+			      (window-appears-in-workspace-p x space)
+			      (or (not head)
+				  (window-on-head x head))))))))
+
       (list (apply max (cons 0 (delq nil (mapcar car struts))))
 	    (apply max (cons 0 (delq nil (mapcar cadr struts))))
 	    (apply max (cons 0 (delq nil (mapcar caddr struts))))
@@ -109,12 +117,12 @@ not the current head (of WINDOW)."
 	   ;; Find the rectangle covering the current head
 	   (head-rect (rectangle-from-coords (head-offset head)
 					     (head-dimensions head)))
-	   ;; Find the largest rectangle 
+	   ;; Find the largest rectangle
 	   (rect (or (largest-rectangle-from-edges
 		      edges #:avoided avoided #:head head) head-rect)))
       ;; Shrink that to the union of all struts
       (rectangle-intersection
-       rect (apply-struts-to-rect (combined-struts) head-rect))))
+       rect (apply-struts-to-rect (combined-struts #:head head) head-rect))))
 
   (define (calculate-workarea-from-struts #!key (workspace current-workspace))
     (apply-struts-to-rect (combined-struts workspace)
