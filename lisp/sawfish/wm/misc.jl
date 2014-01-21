@@ -120,14 +120,20 @@ list of strings DIRS."
   "Return the id of a head currently containing the mouse pointer."
   (find-head (query-pointer)))
 
+(define (window-center w)
+  (let ((point (window-position w))
+	(dims (window-dimensions w)))
+    (cons
+     (+ (car point) (quotient (car dims) 2))
+     (+ (cdr point) (quotient (cdr dims) 2)))))
+
+
 (define (current-head #!optional (w (input-focus)))
   "Return the id of the `current' head."
   (require 'sawfish.wm.windows)
   (if (not (desktop-window-p w))
-      (or (and w (let ((point (window-position w))
-                       (dims (window-dimensions w)))
-                   (find-head (+ (car point) (quotient (car dims) 2))
-                              (+ (cdr point) (quotient (cdr dims) 2)))))
+      (or (and w (let ((center (window-center w)))
+                   (find-head (car center) (cdr center))))
           (pointer-head))
     (pointer-head)))
 
@@ -204,6 +210,7 @@ by concatenating the sequence of strings SEQ."
                        call-with-keyboard-grabbed call-with-error-handler
                        make-directory-recursively locate-file
                        clamp clamp* uniquify-list screen-dimensions
+                       window-center
                        pointer-head current-head current-head-dimensions
                        current-head-offset load-module eval-in
                        user-eval user-require quote-menu-item
