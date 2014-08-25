@@ -45,8 +45,10 @@
 	(call-hook 'workarea-changed-hook))))
 
   ;; bug here?
-  (define (combined-struts #!key (space current-workspace)
-			     (head #f))
+  (define (combined-struts #!key
+			     (space current-workspace)
+			     (head #f)
+			     (window #f))
     (let ((struts (mapcar (lambda (x)
 			    (window-get x 'workarea-strut))
 			  (filter-windows
@@ -54,7 +56,8 @@
 			     (and
 			      (window-appears-in-workspace-p x space)
 			      (or (not head)
-				  (window-on-head x head))))))))
+				  (window-on-head x head))
+			      (not (eq window x))))))))
 
       (list (apply max (cons 0 (delq nil (mapcar car struts))))
 	    (apply max (cons 0 (delq nil (mapcar cadr struts))))
@@ -121,8 +124,9 @@ not the current head (of WINDOW)."
 	   (rect (or (largest-rectangle-from-edges
 		      edges #:avoided avoided #:head head) head-rect)))
       ;; Shrink that to the union of all struts
+      ;; fixme: ignore the window! it's not limiting itself.
       (rectangle-intersection
-       rect (apply-struts-to-rect (combined-struts #:head head) head-rect))))
+       rect (apply-struts-to-rect (combined-struts #:head head #:window window) head-rect))))
 
   (define (calculate-workarea-from-struts #!key (workspace current-workspace))
     (apply-struts-to-rect (combined-struts workspace)
