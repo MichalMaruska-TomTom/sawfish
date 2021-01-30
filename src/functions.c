@@ -1406,7 +1406,7 @@ functions_init (void)
     rep_ADD_SUBR(Ssend_client_message);
     rep_pop_structure (tem);
 
-    rep_INTERN(root);
+    // rep_INTERN(root);
     rep_INTERN_SPECIAL(after_restacking_hook);
     rep_INTERN(position);
     rep_INTERN(spacing);
