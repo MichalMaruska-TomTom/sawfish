@@ -51,7 +51,9 @@ static struct frame_part *allocated_parts;
 
 DEFSYM(internal, "internal");
 DEFSYM(tiled, "tiled");
-DEFSYM(center, "center");
+// DEFSYM(center, "center");
+extern repv Qcenter;
+
 DEFSYM(right, "right");
 DEFSYM(left, "left");
 DEFSYM(top, "top");
@@ -1966,7 +1968,7 @@ frames_init (void)
 
     rep_INTERN(internal);
     rep_INTERN(tiled);
-    rep_INTERN(center);
+    // rep_INTERN(center);
     rep_INTERN(right);
     rep_INTERN(left);
     rep_INTERN(top);

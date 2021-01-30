@@ -65,7 +65,7 @@ static int xinerama_heads;
 # endif
 #endif
 
-DEFSYM(root, "root");
+// DEFSYM(root, "root");
 DEFSYM(after_restacking_hook, "after-restacking-hook");
 DEFSYM(position, "position");
 DEFSYM(spacing, "spacing");
