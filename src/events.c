@@ -1614,7 +1614,7 @@ matching this numeric value are handled (see <X11/X.h>).
 DEFUN("current-event-window", Fcurrent_event_window, Scurrent_event_window,
       (repv win), rep_Subr1) /*
 ::doc:sawfish.wm.events#current-event-window::
-current-event-window
+current-event-window window
 
 Return the window that received the current event, or the symbol
 `root', or nil if no such window.
