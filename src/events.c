@@ -1068,7 +1068,7 @@ configure_request (XEvent *ev)
     if (w == 0)
     {
 	XWindowChanges xwc;
-	unsigned int xwcm = (ev->xconfigurerequest.value_mask & 
+	unsigned int xwcm = (ev->xconfigurerequest.value_mask &
 		      (CWX | CWY | CWWidth | CWHeight
 		       | CWStackMode | CWSibling));
 	xwc.x = ev->xconfigurerequest.x;
