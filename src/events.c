@@ -1001,6 +1001,11 @@ focus_change (Lisp_Window* previous_focus, Lisp_Window* w, int mode)
     /* mmc: this is the asynchronous focus-off hook!!!
      * the window is focused off-> change frame etc.
      * But I want to do it synchronously!*/
+    if (previous_focus == w)
+    {
+	DB(("%s: they are the same!\n", __FUNCTION__));
+	return;
+    }
     if (w)
     {
 	if (!WINDOW_IS_GONE_P (w))
@@ -1061,6 +1066,13 @@ focus_in (XEvent *ev)
 	focus_on_window (0);
     }
 
+    if (ev->xfocus.detail == NotifyInferior) /* root ! */
+    {
+    }
+    if (ev->xfocus.detail == NotifyNonlinearVirtual)
+    {
+	return;
+    }
     if ((ev->xfocus.detail == NotifyDetailNone) /* None ! */
 	&& ((ev->xfocus.mode   == NotifyNormal)))
     {
