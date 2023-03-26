@@ -1,0 +1,33 @@
+*.jlc
+*.mo
+themes/smaker/*.tar.gz
+themes/*.tar.gz
+debian/sawfish-data
+debian/sawfish-dbg
+debian/sawfish-lisp-source
+debian/sawfish
+debian/tmp
+debian/.debhelper
+man/*gz
+man/sawfish.info*
+*/Makefile
+src/.libexec
+src/.libs
+src/*.o
+src/sawfish
+patches/
+
+# debian:
+build-stamp
+configure-stamp
+
+# build:
+Makefile
+config.h
+configure
+
+
+save
+src/.*.d
+src/*.la
+src/*.lo
