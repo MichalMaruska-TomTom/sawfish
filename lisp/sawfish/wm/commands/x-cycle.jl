@@ -105,7 +105,7 @@
 
 
   (defvar debug-x-cycle 0 "0 don't print tracing info.")
-  (define debug #t "used by rep.trace macros")
+  (define debug #f "used by rep.trace macros")
 
   ;;rep.mmc: 
   (defmacro push! (symbol item)
@@ -380,7 +380,7 @@ Workspaces are just the indexes."
     ;; reposition ws/vp:
     (fluid-set x-cycle-current win)
 
-    (print-debug "Showing the window %s!\n" (window-name win))
+    (DB "Showing the window %s!\n" (window-name win))
     (let ((do-restacking
            (lambda ()
              ;; take a snapshot of what we have now. (on the server)
@@ -400,7 +400,7 @@ Workspaces are just the indexes."
                 (DB "now raising window %s\n" (window-name win))
                 (raise-window* win))))))   ;   what else ?
       ;;---------------------
-      (print-debug "Showing the window %s!\n" (window-name win))
+      (DB "Showing the window %s!\n" (window-name win))
       ;; fixme:  2 fase ???
       (with-server-grabbed
        (if (not (window-get win 'sticky))
@@ -434,7 +434,8 @@ Workspaces are just the indexes."
 				       (DB "should be seen!\n")
 				       )
 				     ;; shouldn't this be inner-thunk ???
-				     (grab-keyboard nil nil t) ; does this mean we can ignore `unmap-fun' ? almomst.
+				     (grab-keyboard nil nil t)
+				     ;; does this mean we can ignore `unmap-fun' ? almomst.
 				     (move-viewport-to-window win)))))
        
 	     )
@@ -562,14 +563,15 @@ Workspaces are just the indexes."
 
              ;; so `PRESS' & 
              ((not (event-is-modifier? ev)) 
-              ;; real key pressed:    try  cycle-keymap, then try as usual (global-keymap & window + ???)
+              ;; real key pressed:
+	      ;; try  cycle-keymap, then try as usual (global-keymap & window + ???)
               (let* ((override-keymap cycle-keymap)
                      (command (lookup-event-binding event)))
                 (unless command
                   ;; search cycle-keymap then the usual ones
                   (setq override-keymap nil)
-                  (setq command (lookup-event-binding event))) ;mmc:  why doesn't lookup-event-binding accept a keymap argument?
-                
+                  (setq command (lookup-event-binding event)))
+		;;mmc:  why doesn't lookup-event-binding accept a keymap argument?
                 (if (memq command cycle-commands)
                     ;; call without aborting cycle operation
                     (progn
@@ -577,7 +579,6 @@ Workspaces are just the indexes."
                       
                       (unless (zerop debug-x-cycle)
                         (DB "x-cycle: call-command:\n"))
-                      
                       (call-command command)
                       ;;(request-another-key-event)   ; why not?
                       )
@@ -588,7 +589,7 @@ Workspaces are just the indexes."
                     ;; no wm binding, so forward the event to
                     ;; the focused window (this is why we have
                     ;; to grab the keyboard synchronously)
-                    (allow-events 'replay-keyboard))
+                    (allow-events 'replay-keyboard)) ;fixme: this ungrabs!
 
                   (throw 'x-cycle-exit nil)))) ; mmc: but what happens ? 
 
@@ -670,8 +671,6 @@ Workspaces are just the indexes."
           (DB "running the non-cycle command on %s\n" (window-name (input-focus)))
           (current-event-window (input-focus))
           (call-command tail-command)))))
-
-
 
 
 ;;; Defining commands
