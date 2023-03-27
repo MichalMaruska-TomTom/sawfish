@@ -176,6 +176,7 @@ typedef struct lisp_window {
 // but see map_notify()
 #define WINDOW_IS_GONE_P(w) ((w->gone) || (w->destroyed))
 #define WINDOW_CAN_BE_FREED_P(w) (w->destroyed)
+#define WINDOW_IS_GONE_FOR_STACKING_P(w)  WINDOW_CAN_BE_FREED_P(w)
 
 typedef struct Lisp_Font_Class_struct Lisp_Font_Class;
 
