@@ -175,6 +175,7 @@ typedef struct lisp_window {
 // mmc: destroyed is after gone, b/c destroy_window is called in 1 place, after mark_window_as_gone()
 // but see map_notify()
 #define WINDOW_IS_GONE_P(w) ((w->gone) || (w->destroyed))
+#define WINDOW_CAN_BE_FREED_P(w) (w->destroyed)
 
 typedef struct Lisp_Font_Class_struct Lisp_Font_Class;
 
