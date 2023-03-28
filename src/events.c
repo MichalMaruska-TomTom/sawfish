@@ -305,7 +305,7 @@ colormap_notify (XEvent *ev)
     Lisp_Window *w = find_window_by_id (ev->xcolormap.window);
     if (w != 0 && ev->xcolormap.window == w->id && ev->xcolormap.new)
     {
-	if (w == focus_window)
+	if (WINDOW_FOCUSED_P(w))
 	    install_colormaps (w);
     }
 }
@@ -317,8 +317,6 @@ key_press (XEvent *ev)
 
     /* Don't look for a context map, frame parts are never focused */
     eval_input_event (Qnil);
-
-    XAllowEvents (dpy, SyncKeyboard, last_event_time);
 }
 
 static void
@@ -604,7 +602,9 @@ property_notify (XEvent *ev)
 {
     Lisp_Window *w = find_window_by_id (ev->xproperty.window);
     repv w_ = rep_VAL (w);		/* type alias for gc-pro'ing */
-    if (w != 0 && ev->xproperty.window == w->id)
+
+    if (w != 0 && !WINDOW_IS_GONE_P(w)
+        && ev->xproperty.window == w->id) /* not frame */
     {
 	bool need_refresh = FALSE, changed = TRUE;
 	repv changed_states = Qnil, prop;
@@ -649,7 +649,7 @@ property_notify (XEvent *ev)
 		{
 		    w->n_cmap_windows = 0;
 		}
-		if (w == focus_window)
+		if (WINDOW_FOCUSED_P(w))
 		    install_colormaps (w);
 	    }
 	    else if (ev->xproperty.atom == xa_wm_protocols)
@@ -743,14 +743,15 @@ expose (XEvent *ev)
 static void
 destroy_notify (XEvent *ev)
 {
-    Lisp_Window *w = x_find_window_by_id (ev->xdestroywindow.window);
-    if (w == 0 || ev->xdestroywindow.window != w->saved_id)
+
+    Lisp_Window *w = find_window_by_id (ev->xdestroywindow.window);
+    if (w == 0 || ev->xdestroywindow.window != w->id)
 	return;
-    remove_window (w, TRUE, FALSE);
+
+    mark_window_as_gone(w);
+    remove_window (w, True);
     property_cache_invalidate_window (rep_VAL (w));
-    emit_pending_destroys ();
-    /* in case the id gets recycled but the window doesn't get gc'd..? */
-    w->saved_id = 0;
+    destroy_window (w);
 }
 
 void
@@ -799,8 +800,9 @@ static void
 reparent_notify (XEvent *ev)
 {
     Lisp_Window *w = find_window_by_id (ev->xreparent.window);
-    if (w != 0 && ev->xreparent.window == w->id
-	&& ev->xreparent.event == w->id)
+
+    if (w != 0 && !WINDOW_IS_GONE_P(w)
+	&& (ev->xreparent.event == ev->xreparent.window))
     {
 	if (ev->xreparent.parent != root_window
 	    && ev->xreparent.parent != w->frame)
@@ -814,7 +816,7 @@ reparent_notify (XEvent *ev)
                                rep_VAL(w), Qnil, Qnil);
 
 	    /* Not us doing the reparenting. */
-	    remove_window (w, FALSE, FALSE);
+	    remove_window (w, FALSE);
 	}
         else
             Fcall_window_hook (Qreparent_notify_hook,
@@ -826,31 +828,14 @@ static void
 map_notify (XEvent *ev)
 {
     Lisp_Window *w = find_window_by_id (ev->xmap.window);
-    if (w != 0 && ev->xmap.window == w->id && ev->xmap.event == w->id)
+    if (w != 0 && !WINDOW_IS_GONE_P(w) && ev->xmap.window == ev->xmap.event)
     {
-	XWindowAttributes wa;
-	XGetWindowAttributes (dpy, w->id, &wa);
-	if (wa.override_redirect)
+	if (ev->xmap.override_redirect)
 	{
-	    /* arrgh, the window changed its override redirect status.. */
-	    remove_window (w, FALSE, FALSE);
-#if 0
-	    fprintf(stderr, "warning: I've had it with window %#lx\n",
-		    (long)(w->id));
-#endif
+	    remove_window (w, FALSE);
 	}
 	else
 	{
-	    /* copy in some of the new values */
-	    w->attr.width = wa.width;
-	    w->attr.height = wa.height;
-
-	    w->mapped = TRUE;
-	    /* This should not happen.  The window should have been
-	       framed at the map request. -- thk */
-	    if (w->frame == 0)
-		fprintf (stderr, "warning: window %#1x has no frame\n",
-			 (uint)(w->id));
 	    Fcall_window_hook (Qmap_notify_hook, rep_VAL(w), Qnil, Qnil);
 	}
     }
@@ -860,36 +845,25 @@ static void
 unmap_notify (XEvent *ev)
 {
     Lisp_Window *w = find_window_by_id (ev->xunmap.window);
-    if (w != 0 && ev->xunmap.window == w->id
-	&& (ev->xunmap.event == w->id || ev->xunmap.send_event))
+    if (w)
     {
-	int being_reparented = FALSE;
-	XEvent reparent_ev;
-
+	/* the event can/will be reported on the frame window as well */
+	if (ev->xunmap.event == ev->xunmap.window)
+    {
 	w->mapped = FALSE;
 	if (w->reparented)
 	{
 	    if (w->visible)
 	    {
 		XUnmapWindow (dpy, w->frame);
+		    w->visible = FALSE;
 		reset_frame_parts (w);
 	    }
-	    /* Careful now.  It is possible that the unmapping was
-	       caused by someone else reparenting the window.
-	       Removing the frame involves reparenting the window to
-	       the root.  Bad things may happen if we do that while
-	       a different reparenting is in progress. -- thk */
-	    being_reparented = XCheckTypedWindowEvent (dpy, w->id,
-						       ReparentNotify,
-						       &reparent_ev);
-	    if (!being_reparented)
-	    {
 	        /* Removing the frame reparents the client window back to
 		   the root. This means that we receive the next MapRequest
 		   for the window. */
-		remove_window_frame (w);
+		remove_window_frame (w, TRUE);
 		destroy_window_frame (w, FALSE);
-	    }
 
 	    /* Handle a possible race condition: if the client
 	       withdrew the window while we were in the process of
@@ -903,16 +877,11 @@ unmap_notify (XEvent *ev)
 	}
 	Fcall_window_hook (Qunmap_notify_hook, rep_VAL(w), Qnil, Qnil);
 
-	/* Changed the window-handling model, don't let windows exist
-	   while they're withdrawn */
-	if (being_reparented)
-	    reparent_notify(&reparent_ev);
-	else
-	    remove_window (w, FALSE, FALSE);
-
 	/* This lets the client know that we are done, in case it wants
 	   to reuse the window. */
-	XDeleteProperty (dpy, ev->xunmap.window, xa_wm_state);
+	    if (!WINDOW_IS_GONE_P (w))
+		XDeleteProperty (dpy, w->id, xa_wm_state);
+	}
     }
 }
 
@@ -1014,8 +983,6 @@ leave_notify (XEvent *ev)
     }
 }
 
-static Lisp_Window *last_focused;
-
 static void
 report_focus_change (Lisp_Window *w)
 {
@@ -1029,34 +996,101 @@ report_focus_change (Lisp_Window *w)
     }
 }
 
+/* X server confirms/announces focus change. */
+static void
+focus_change (Lisp_Window* previous_focus, Lisp_Window* w, int mode)
+{
+    /* mmc: this is the asynchronous focus-off hook!!!
+     * the window is focused off-> change frame etc.
+     * But I want to do it synchronously!*/
+    if (previous_focus == w)
+    {
+	DB(("%s: they are the same!\n", __FUNCTION__));
+	return;
+    }
+    if (w)
+    {
+	if (!WINDOW_IS_GONE_P (w))
+	{
+	    install_colormaps (w);
+	    report_focus_change (w);
+
+	    Fcall_window_hook (Qfocus_in_hook, rep_VAL(w),
+			       rep_LIST_1 (mode_to_sym(mode)),
+			       Qnil);
+	}
+    }
+    if (previous_focus != 0)
+	report_focus_change (previous_focus);
+}
+
+/* We asked a client to accept focus. Now we receive the FocusIn. */
+static void
+accept_asked_focus (XEvent *ev, Lisp_Window* previous_focus, Lisp_Window* w,
+		    struct focus_request_t *focus_request)
+{
+    DB(("%s: serial %lu vs. expected %lu\n", __FUNCTION__, ev->xfocus.serial,
+	focus_request->serial));
+    if (focus_request->sent)
+    {
+	DB(("Wow!\n"));
+	focus_request->sent = FALSE;
+    }
+    if (focus_request->grabbed == TRUE)
+    {
+	focus_request->grabbed = FALSE;
+	Fungrab_keyboard ();
+    }
+
+    /* we could have had an excursion to root_window or no_focus_window.
+       In such change/occasion we didn't change some globals*/
+    if (previous_focus != w)
+    {
+	/* when not SEND, we might call this immediately */
+	focus_change (previous_focus, w, ev->xfocus.mode);
+    }
+}
+
 static void
 focus_in (XEvent *ev)
 {
     Lisp_Window *w = find_window_by_id (ev->xfocus.window);
     if (ev->xfocus.detail == NotifyPointer)
 	return;
+    if ((ev->xfocus.mode == NotifyGrab)
+	|| (ev->xfocus.mode == NotifyUngrab))
+	return;
+
     if (w != 0 && w->visible)
     {
 	Lisp_Window *old = focus_window;
 	focus_window = w;
-
-	if (last_focused != w)
-	{
-	    last_focused = w;
-	    if (old != 0)
-		report_focus_change (old);
-	    install_colormaps (w);
-	    report_focus_change (w);
-	    if (!WINDOW_IS_GONE_P (w))
-	    {
-		Fcall_window_hook (Qfocus_in_hook, rep_VAL(w),
-				   rep_LIST_1 (mode_to_sym (ev->xfocus.mode)),
-				   Qnil);
-	    }
-	}
+	accept_asked_focus (ev, old, w, &focus_request);
     }
     else if (ev->xfocus.window == root_window)
+    {
+	/* should do the action directly! */
 	focus_on_window (0);
+    }
+
+    if (ev->xfocus.detail == NotifyInferior) /* root ! */
+    {
+    }
+    if (ev->xfocus.detail == NotifyNonlinearVirtual)
+    {
+	return;
+    }
+    if ((ev->xfocus.detail == NotifyDetailNone) /* None ! */
+	&& ((ev->xfocus.mode   == NotifyNormal)))
+    {
+	DB(("focus gone to NONE!\n"));
+	if (ev->xfocus.mode   == NotifyUngrab)
+	    DB (("focus to None (root is informed), but mode is NotifyUngrab."));
+	DB(("%s: Root window is focused: we have to put back to another window! %lu %lu\n",
+	    __FUNCTION__,
+	    focus_request.serial, ev->xfocus.serial));
+	focus_on_window (0); /* on our special window */
+    };
 }
 
 static void
@@ -1065,32 +1099,47 @@ focus_out (XEvent *ev)
     Lisp_Window *w = find_window_by_id (ev->xfocus.window);
     if (ev->xfocus.detail == NotifyPointer
         || ev->xfocus.mode == NotifyGrab || ev->xfocus.mode == NotifyUngrab)
-	return;
-    if (w != 0 && ev->xfocus.detail != NotifyInferior)
     {
-	if (focus_window == w)
+	return;
+    }
+    if (w)
+    {
+	if (ev->xfocus.detail == NotifyInferior)
+	{
+	    DB(("%s: some error!\n", __FUNCTION__));
+	}
+	else
+	{
+	    if (focus_window != w)
+	    {
+		DB(("how come we receive focus_out on a non-focused lisp window "
+		    "%s %x (focused is %s %x)?\n",
+		    rep_STR (w->name), w->id,
+		    (focus_window)? rep_STR (focus_window->name):"",
+		    (focus_window)? focus_window->id:0));
+	    }
+	    else
+	    {
+		if ((ev->xfocus.mode == NotifyNormal)
+		    || (ev->xfocus.mode == NotifyWhileGrabbed))
 	{
             focus_window = 0;
+		}
 	    report_focus_change (w);
-	}
 
-	if (last_focused == w)
-	{
-	    last_focused = 0;
-	    if (!WINDOW_IS_GONE_P (w))
-	    {
+
 		Fcall_window_hook (Qfocus_out_hook, rep_VAL(w),
-				   rep_LIST_1 (mode_to_sym (ev->xfocus.mode)),
-				   Qnil);
+				   rep_LIST_1 (mode_to_sym (ev->xfocus.mode)), Qnil);
 	    }
 	}
     }
-    else if ((w = x_find_window_by_id (ev->xfocus.window)) != 0
-	     && WINDOW_IS_GONE_P (w) && ev->xfocus.window == w->saved_id)
+    else
     {
-	/* focus-out event from a deleted window */
-	if (focus_window == w)
-	    focus_window = 0;
+	if (! ((ev->xfocus.window == root_window)
+	       || (ev->xfocus.window == no_focus_window)))
+	    /* some client window  */
+	    /* todo: I should look after the `frame'! */
+	    DB (("%s the lisp-window was not found! %x\n", __FUNCTION__, ev->xfocus.window));
     }
 }
 
@@ -1112,7 +1161,7 @@ configure_request (XEvent *ev)
 	xwc.stack_mode = ev->xconfigurerequest.detail;
 	XConfigureWindow (dpy, ev->xconfigurerequest.window, xwcm, &xwc);
     }
-    else if (w != 0)
+    else
     {
 	unsigned long mask = ev->xconfigurerequest.value_mask;
 	repv alist = Qnil;
@@ -1485,16 +1534,12 @@ handle_input_mask(long mask)
 		break;
 	}
 
-	rep_PUSHGC(gc_old_current_window, old_current_window);
-	emit_pending_destroys ();
-	rep_POPGC;
-
 	if (xev.type == NoExpose || xev.type == GraphicsExpose)
 	    continue;
 
 #ifdef DEBUG
 	do {
-	    Lisp_Window *w = x_find_window_by_id (xev.xany.window);
+	    Lisp_Window *w = find_window_by_id (xev.xany.window);
 	    DB(("** Event: %s (win %lx: %s)\n",
 		xev.type < LASTEvent ? event_names[xev.type] : "unknown",
 		(long)xev.xany.window, w ? (char *) rep_STR (w->name) : "unknown"));
@@ -1516,7 +1561,6 @@ handle_input_mask(long mask)
 	XFlush (dpy);
     }
 
-    emit_pending_destroys ();
     commit_queued_focus_change ();
 }
 

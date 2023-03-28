@@ -33,9 +33,15 @@ int debug_windows;
 Lisp_Window *window_list;
 int window_type;
 
-Lisp_Window *focus_window;
+Lisp_Window *focus_window;      /* Where is the X focus. Modified on focus_out/in events */
 
-int pending_destroys;
+/* Scheduled (Unmapped) window, to be focused right after mapped */
+Lisp_Window *desired_focus_window = NULL;
+
+/* what we requested to focus. If the window is gone in the meanwhile
+ * ..... but we might request another one!
+ * this is useless! unless a `list' */
+Window requested_focus_id;
 
 static bool initialising;
 
@@ -47,6 +53,14 @@ DEFSYM(placed, "placed");
 DEFSYM(after_framing_hook, "after-framing-hook");
 DEFSYM(after_initialization_hook, "after-initialization-hook");
 DEFSYM(remove_window_hook, "remove-window-hook");
+
+/* This is a hack, due to our postponing re-focusing. I still don't know why we do it.
+ * It's used when we focus twice in serving 1 event. */
+DEFSYM(focus_skipped_hook, "focus-skipped-hook");
+DEFSYM(focus_on_hook, "focus-on-hook");
+DEFSYM(focus_off_hook, "focus-off-hook");
+/* the window could not be focused: either gone, or unmapped? */
+DEFSYM(focus_fail_hook, "focus-fail-hook");
 
 /* for visibility-notify-hook */
 DEFSYM(fully_obscured, "fully-obscured");
@@ -121,32 +135,19 @@ window_input_hint_p (Lisp_Window *w)
 	return TRUE;
 }
 
-static Window queued_focus_id;
+struct focus_request_t focus_request;
+
+Window queued_focus_id;
 static bool queued_take_focus;
 static bool queued_set_focus;
 static int queued_focus_revert;
 static Time queued_focus_time;
 
-/* We can lose the focus sometimes, notably after a was-focused
-   window is closed while a keyboard grab exists.. (netscape) */
-static void
-check_for_lost_focus (void)
-{
-    Window focus;
-    int revert_to;
-    XGetInputFocus (dpy, &focus, &revert_to);
-    if (focus == None || focus == PointerRoot)
-    {
-	DB (("lost focus (%ld)\n", focus));
-	focus_on_window (focus_window);
-    }
-}
 
+/* todo: this should be invoked from REPL ... not only after key command */
 void
 commit_queued_focus_change (void)
 {
-    if (0 && queued_focus_id == 0)
-	check_for_lost_focus ();
 
     if (queued_focus_id != 0)
     {
@@ -154,6 +155,16 @@ commit_queued_focus_change (void)
 	{
 	    DB(("  sending WM_TAKE_FOCUS %" FMT_WIN " %ld\n",
 		(unsigned) queued_focus_id, queued_focus_time));
+
+	    focus_request.sent = True;
+	    // focus_request.grabbed = FALSE;
+	    focus_request.time = queued_focus_time;
+	    focus_request.serial = NextRequest(dpy);
+	    focus_request.window = queued_focus_id;
+
+            /* so that the change occurs! */
+            XSetInputFocus (dpy, no_focus_window, queued_focus_revert,
+                            queued_focus_time);
 	    send_client_message (queued_focus_id,
 				 xa_wm_take_focus,
 				 queued_focus_time);
@@ -162,8 +173,11 @@ commit_queued_focus_change (void)
 	{
 	    DB(("  focusing %" FMT_WIN " %ld\n",
 		(unsigned) queued_focus_id, queued_focus_time));
+            /* note: temporary approach: */
+            focus_request.window = queued_focus_id;
 	    XSetInputFocus (dpy, queued_focus_id,
 			    queued_focus_revert, queued_focus_time);
+	    /* & Ungrab */
 	}
 	queued_focus_id = 0;
     }
@@ -296,22 +310,6 @@ find_window_by_id (Window id)
         DB(("%s searching for %" FMT_WIN "\n", __FUNCTION__, id));
     while (w != 0 && w->id != id && w->frame != id)
 	w = w->next;
-    if (debug_windows & DB_WINDOWS_FIND)
-        DB(("%s %sfound\n", __FUNCTION__, (w)?"":"not "));
-    if (w != 0 && WINDOW_IS_GONE_P (w))
-	w = 0;
-    return w;
-}
-
-/* This is different to the above in that it could return a window
-   that doesn't have a client window. */
-Lisp_Window *
-x_find_window_by_id (Window id)
-{
-    Lisp_Window *w;
-    w = window_list;
-    while (w != 0 && w->saved_id != id && w->frame != id)
-	w = w->next;
     return w;
 }
 
@@ -353,7 +351,7 @@ install_window_frame (Lisp_Window *w)
 }
 
 void
-remove_window_frame (Lisp_Window *w)
+remove_window_frame (Lisp_Window *w, bool restack)
 {
     if (debug_windows & DB_WINDOWS_FRAME)
         DB (("%s%s%s %s\n", reparent_color, __FUNCTION__, color_reset, rep_STR(w->name)));
@@ -372,6 +370,7 @@ remove_window_frame (Lisp_Window *w)
 	XReparentWindow (dpy, w->id, root_window, w->attr.x, w->attr.y);
 	w->reparented = FALSE;
 	after_local_map (w);
+	if (restack)
 	restack_window (w);
 
 	if (queued_focus_id == w->frame)
@@ -481,7 +480,7 @@ add_window (Window id)
 	window_list = w;
 	w->car = window_type;
 	w->id = id;
-	w->saved_id = id;
+	w->gone = FALSE;
 	w->plist = Qnil;
 	w->frame_style = Qnil;;
 	w->icon_image = rep_NULL;
@@ -589,7 +588,8 @@ add_window (Window id)
 	    Fungrab_server ();
 	}
 	else
-	    emit_pending_destroys ();
+	{
+	}
 
 	if (!WINDOW_IS_GONE_P (w))
 	{
@@ -615,42 +615,59 @@ add_window (Window id)
     return w;
 }
 
+/*
+ * Mark the X client window as gone from the X server, to not issue any more X-requests on it.
+ */
+void
+mark_window_as_gone(Lisp_Window *w)
+{
+   if (WINDOW_IS_GONE_P(w))
+      return;
+   DB(("%s %x %s\n", __FUNCTION__, w->id, rep_STR(w->name)));
+   w->gone = True;
+}
+
 /* Remove W from the managed windows. If DESTROYED is nil and
    the window is currently reparented by us, it will be reparented back to
    the root window */
 void
-remove_window (Lisp_Window *w, bool destroyed, bool from_error)
+remove_window (Lisp_Window *w, bool destroyed)
 {
     DB(("remove_window (%s, %s)\n",
 	rep_STR(w->name), destroyed ? "destroyed" : "not-destroyed"));
 
+    remove_from_stacking_list (w);
     if (w->id != 0)
     {
-	if (!destroyed && !from_error)
+	if (!destroyed && (!WINDOW_IS_GONE_P (w)))
 	{
-	    grab_window_events (w, FALSE);
-	    remove_window_frame (w);
+	    XUngrabKey (dpy, AnyKey,AnyModifier, w->id);
+	    remove_window_frame (w, FALSE);
 
 	    /* Restore original border width of the client */
 	    XSetWindowBorderWidth (dpy, w->id, w->old_border_width);
 	}
 
-	if (!from_error)
 	    destroy_window_frame (w, FALSE);
 
-	if (!WINDOW_IS_GONE_P (w))
-	    remove_from_stacking_list (w);
-
-	if (!from_error)
+	if ((!destroyed) && (!WINDOW_IS_GONE_P (w)))
 	    focus_off_window (w);
-
-	w->id = 0;
-	pending_destroys++;
-
-	/* gc will do the rest... */
     }
-    else if (w->frame != 0 && !from_error)
+    else if (w->frame != 0)
 	destroy_window_frame (w, FALSE);
+}
+
+/* The window is gone from the X display. */
+void
+destroy_window (Lisp_Window *w)
+{
+    /* this is important: all calls from the destroy-notify-hook should know this! */
+    w->destroyed = 1;           /* fixme: but then I should protect against GC! */
+
+
+    Fcall_window_hook (Qdestroy_notify_hook,
+                       rep_VAL(w), Qnil, Qnil);
+    w->id = 0;                   /* mmc: should be last in this function? */
 }
 
 void
@@ -662,33 +679,6 @@ fix_window_size (Lisp_Window *w)
     else
 	XResizeWindow (dpy, w->id, w->attr.width, w->attr.height);
     Fungrab_server ();
-}
-
-/* Call destroy-notify-hook on any newly-dead windows */
-void
-emit_pending_destroys (void)
-{
-    if (pending_destroys > 0)
-    {
-	Lisp_Window *w;
-    again:
-	for (w = window_list; w != 0 && !rep_INTERRUPTP; w = w->next)
-	{
-	    if (WINDOW_IS_GONE_P (w) && !w->destroyed)
-	    {
-		w->destroyed = 1;
-		Fcall_window_hook (Qdestroy_notify_hook,
-				   rep_VAL(w), Qnil, Qnil);
-
-		focus_off_window (w);
-
-		/* gc may have reordered the list, so we have to start
-		   at the beginning again.. */
-		goto again;
-	    }
-	}
-    }
-    pending_destroys = 0;
 }
 
 /* Lisp functions */
@@ -1607,7 +1597,8 @@ window_mark_type (void)
     struct prop_handler *ph;
     for (w = window_list; w != 0; w = w->next)
     {
-	if (!WINDOW_IS_GONE_P (w) || !w->destroyed)
+            //    !(a || b) || ! b = ! (a || b &&  b)
+        if (! (w->destroyed && (w->id == 0))) // (!WINDOW_IS_GONE_P (w) || !w->destroyed)
 	    rep_MARKVAL(rep_VAL(w));
     }
     for (ph = prop_handlers; ph != 0; ph = ph->next)
@@ -1825,7 +1816,7 @@ windows_kill (void)
     {
 	next = rep_VAL (w->next);
 	Fcall_window_hook (Qremove_window_hook, rep_VAL (w), Qnil, Qnil);
-	remove_window (w, FALSE, FALSE);
+	remove_window (w, FALSE);
 	w = VWIN (next);
     }
 }
