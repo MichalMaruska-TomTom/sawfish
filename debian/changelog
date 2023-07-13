@@ -1,3 +1,10 @@
+sawfish (1:1.12.0-maruska2) focal; urgency=medium
+
+  [ mmaruska@gmail.com ]
+  * for focal
+
+ --  <mmaruska@gmail.com>  Thu, 13 Jul 2023 09:21:13 +0200
+
 sawfish (1:1.12.0-maruska) unstable; urgency=medium
 
   * base of color debugging, add errors.h
